@@ -23,7 +23,17 @@
 extern "C" {
 #include <user_interface.h>
 }
-#include "MAX7219_Dot_Matrix.h"
+
+
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 32 // OLED display height, in pixels
+
+#define OLED_RESET     16 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+
 
 
 // ESP8266 power control
@@ -47,34 +57,29 @@ void esp8266_init(void) {
 // Led Matrix display
 // ============================================================
 
-#define DSP_COUNT      4    // The display has 4 elements of 8x8 LEDs (VCC on 3V3, GND on GND).
-#define DSP_DIN        D7   // DIN pin of display is connected to D7 of ESP8266.
-#define DSP_CLK        D5   // CLK pin of display is connected to D5 of ESP8266.
-#define DSP_CS         D2   // CS  pin of display is connected to D2 of ESP8266.
-#define DSP_INTENSITY  8    // Brightness level of display: 0 (min) to 15 (max).
 
-MAX7219_Dot_Matrix dsp(DSP_COUNT,DSP_CS,DSP_DIN,DSP_CLK);
+
 
 // Send setup commands to the matrix display (clear all LEDs, sets brightness).
 void dsp_init(void) {
-  dsp.begin();
-  dsp.setIntensity(DSP_INTENSITY);
+  
+    display.clearDisplay();
+    display.setTextColor(WHITE);
+    display.setTextSize(2);
+    display.setFont(NULL);
 }
 
 // Puts 'msg' (flush right) on the display ('msg' should be max 4 chars, rest is truncated).
 void dsp_set(char * msg) {
-  int offset = (strlen(msg)-DSP_COUNT)*8 - 1; // The -1 shifts one column - looks better.
-  dsp.sendSmooth(msg,offset);
+  
+  display.clearDisplay();
+  display.setCursor(0, 10);
+  display.println(msg);
+  display.display();
+
 }
 
-// Scrolls 'msg' on the display; returns when scrolling done ('msg' can have any length)).
-void dsp_scroll(char * msg) {
-  int len = strlen(msg);
-  for(int offset=-DSP_COUNT*8; offset<len*8; offset++ ) {
-    dsp.sendSmooth(msg,offset);
-    delay(40);
-  }
-}
+
 
 
 // Sensor
@@ -97,15 +102,15 @@ void dsp_scroll(char * msg) {
 
 // To trace the measurement process, measurements are printed over the serial line.
 // With the following macros this can be enabled or disabled.
-#define SEN_TRACE(...)      Serial.printf(__VA_ARGS__)
-//#define SEN_TRACE(...)      // nothing
+//#define SEN_TRACE(...)      Serial.printf(__VA_ARGS__)
+#define SEN_TRACE(...)      // nothing
 
-#define SEN_PIN        D6          // D0 pin of line tracking sensor connected to this pin of ESP8266 (VCC on VIN, GND on GND).
+#define SEN_PIN        0          // D0 pin of line tracking sensor connected to this pin of ESP8266 (VCC on VIN, GND on GND).
 #define SEN_IDLE       2000000     // If there is no interrupt within 2 000 000 us (2 seconds), assume rotation stopped.
-#define SEN_COUNT1     4           // Number of interrupts after a restart ("stabilization") before reporting measurements (must be >=2).
-#define SEN_SIZE1      8           // Window size for first moving average (sen_movav1) - this is used to filter out spikes.
-#define SEN_STEP1      2           // Any delta smaller than the moving average (sen_movav1) divided by SEN_STEP1 is rejected.
-#define SEN_SIZE2      32          // Window size for second moving average (sen_movav2) - this is to smooth output (not too fast changes).
+#define SEN_COUNT1     64           // Number of interrupts after a restart ("stabilization") before reporting measurements (must be >=2).
+#define SEN_SIZE1      8          // Window size for first moving average (sen_movav1) - this is used to filter out spikes.
+#define SEN_STEP1      16          // Any delta smaller than the moving average (sen_movav1) divided by SEN_STEP1 is rejected.
+#define SEN_SIZE2      64          // Window size for second moving average (sen_movav2) - this is to smooth output (not too fast changes).
 volatile int           sen_count1; // Number of all interrupts.
 volatile unsigned long sen_time1;  // Time stamp of the last interrupt from the sensor.
 volatile unsigned long sen_movav1; // The moving average of all delta's.
@@ -121,14 +126,18 @@ volatile unsigned long sen_movav2; // The moving average of all accepted delta's
 //   SEN_COUNT1+1.. / 1   = MEAS1 = measuring, but only one accepted interrupt yet (hence no delta)
 //   SEN_COUNT1+1.. / 2.. = MEAS  = measuring; accepted delta's available
 
+
+void ICACHE_RAM_ATTR sen_isr ();
+
+
 // Prepare sensor (setup pin, enable interrupt, initialize signal processing).
 void sen_init(void) {
   // Set state to idle
   sen_count1= 0;
   sen_count2= 0;
   // Configure hardware
-  pinMode(SEN_PIN, INPUT);
-  attachInterrupt(digitalPinToInterrupt(SEN_PIN), sen_isr, RISING); // ensures sen_isr() is called a level change is detected on pin SEN_PIN
+  pinMode(SEN_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(SEN_PIN), sen_isr, FALLING); // ensures sen_isr() is called a level change is detected on pin SEN_PIN
 }
 
 // The interrupts service routine called for every level change on SEN_PIN (registered in sen_init).
@@ -211,7 +220,7 @@ unsigned long sen_get(void) {
 // Button
 // ============================================================
 
-#define BUT_PIN        D3          // D3 pin is the 'flash' button
+#define BUT_PIN        15          // D3 pin is the 'flash' button
 
 int but_oldstate;
 int but_curstate;
@@ -248,11 +257,11 @@ int but_wentdown(void) {
 // It puts a dot at position 'dotpos'.
 // Note that the font is patched (to have digits with a leading decimal point).
 char * tostr(int val,int dotpos) {
-  static char buf[]="xxxx"; // Local buffer - only works for single threaded - ok here.
-  for(int i=0; i<4; i++ ) {
+  static char buf[]="xxxxx"; // Local buffer - only works for single threaded - ok here.
+  for(int i=0; i<5; i++ ) {
     int digit=val%10; // Extract LSB
-    buf[3-i]=digit+'0'; // Put at rightmost position
-    if( i==dotpos && i!=0 ) buf[3-i]=digit+'\x10'; // Overlay decimal point (font is patched to have '0.', '1.' etc at 0x10 and up).
+    buf[4-i]=digit+'0'; // Put at rightmost position
+//    if( i==dotpos && i!=0 ) buf[4-i]=digit+'\x10'; // Overlay decimal point (font is patched to have '0.', '1.' etc at 0x10 and up).
     val=val/10;
   }
   // Erase leading 0s
@@ -285,7 +294,7 @@ void show_delta( unsigned long delta, int units ) {
     switch( units ) {
       case 0: dsp_set(tostr(rpm  ,0)); break;
       case 1: dsp_set(tostr(ms10 ,1)); break;
-      case 2: dsp_set(tostr(hz100,2)); break;
+      case 2: dsp_set(tostr(rpm/60 ,0)); break;
     }
   }
 }
@@ -303,6 +312,14 @@ unsigned long oldtime;     // Last time the display was refreshed (when not rota
 
 // Arduino callback at startup
 void setup() {
+
+// SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
+//    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
+
+  
   // Setup serial port (over USB) for tracing.
   Serial.begin(BAUD);
   Serial.printf("\n\nWelcome at mRPM\n");
@@ -316,7 +333,7 @@ void setup() {
   units= 0; // 0=rpm, 1=ms, 2=Hz
   olddelta= 0;
   // Give welcome message.
-  dsp_scroll("mRPM " VERSION);
+  dsp_set("mRPM " VERSION);
 }
 
 // Arduino callback, repeated called after setup()
@@ -343,4 +360,3 @@ void loop(){
   // Display and buttons are refreshed every 100ms.
   delay(REFRESH_MS);
 }
-
