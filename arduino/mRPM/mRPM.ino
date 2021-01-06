@@ -107,10 +107,10 @@ void dsp_set(char * msg) {
 
 #define SEN_PIN        0          // D0 pin of line tracking sensor connected to this pin of ESP8266 (VCC on VIN, GND on GND).
 #define SEN_IDLE       2000000     // If there is no interrupt within 2 000 000 us (2 seconds), assume rotation stopped.
-#define SEN_COUNT1     64           // Number of interrupts after a restart ("stabilization") before reporting measurements (must be >=2).
+#define SEN_COUNT1     4           // Number of interrupts after a restart ("stabilization") before reporting measurements (must be >=2).
 #define SEN_SIZE1      8          // Window size for first moving average (sen_movav1) - this is used to filter out spikes.
-#define SEN_STEP1      16          // Any delta smaller than the moving average (sen_movav1) divided by SEN_STEP1 is rejected.
-#define SEN_SIZE2      64          // Window size for second moving average (sen_movav2) - this is to smooth output (not too fast changes).
+#define SEN_STEP1      2          // Any delta smaller than the moving average (sen_movav1) divided by SEN_STEP1 is rejected.
+#define SEN_SIZE2      32          // Window size for second moving average (sen_movav2) - this is to smooth output (not too fast changes).
 volatile int           sen_count1; // Number of all interrupts.
 volatile unsigned long sen_time1;  // Time stamp of the last interrupt from the sensor.
 volatile unsigned long sen_movav1; // The moving average of all delta's.
